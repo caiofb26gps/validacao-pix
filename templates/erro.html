@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<div class="card estreito">
+  <h1>{{ erro.code }}</h1>
+  <p>{{ erro.description }}</p>
+  <p><a href="{{ url_for('inicio') }}">Voltar</a></p>
+</div>
+{% endblock %}

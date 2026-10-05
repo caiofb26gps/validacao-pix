@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<section class="card">
+  <h2>Novo usuário</h2>
+  <form method="post" class="linha">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Nome <input name="nome" required></label>
+    <label>Login <input name="login" required></label>
+    <label>Senha inicial <input name="senha" type="password" minlength="8" autocomplete="new-password" required></label>
+    <label>Limite/mês <input name="limite_mensal" type="number" min="0" value="{{ limite_padrao }}" required></label>
+    <label class="check"><input type="checkbox" name="admin"> Admin</label>
+    <button>Criar</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Usuários</h2>
+  <div class="tabela">
+  <table>
+    <thead><tr><th>Nome</th><th>Login</th><th class="num">Usado no mês</th><th>Limite/mês</th><th>Ativo</th><th>Admin</th><th>Redefinir senha</th><th></th></tr></thead>
+    <tbody>
+    {% for u in usuarios %}
+      {# <form> não pode envolver <td>: os campos se ligam ao form pelo atributo form= #}
+      {% set f = "u" ~ u.id %}
+      <tr>
+        <td>{{ u.nome }}</td>
+        <td>{{ u.login }}</td>
+        <td class="num {% if uso[u.id] >= u.limite_mensal %}estourado{% endif %}">{{ uso[u.id] }}</td>
+        <td><input form="{{ f }}" name="limite_mensal" type="number" min="0" value="{{ u.limite_mensal }}" class="curto"></td>
+        <td><input form="{{ f }}" type="checkbox" name="ativo" {% if u.ativo %}checked{% endif %}></td>
+        <td><input form="{{ f }}" type="checkbox" name="admin" {% if u.admin %}checked{% endif %}></td>
+        <td><input form="{{ f }}" name="nova_senha" type="password" minlength="8" placeholder="(manter)" autocomplete="new-password"></td>
+        <td>
+          <form id="{{ f }}" method="post" action="{{ url_for('admin_editar_usuario', usuario_id=u.id) }}">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button class="pequeno">Salvar</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}

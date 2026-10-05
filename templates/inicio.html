@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block conteudo %}
+{% set saldo = [limite - usado, 0]|max %}
+<div class="grade">
+  <section class="card">
+    <h2>Saldo do mês</h2>
+    <p class="numero">{{ saldo }}</p>
+    <p class="sub">validações disponíveis · {{ usado }} de {{ limite }} usadas</p>
+    <div class="barra"><div style="width: {{ (100 * usado / limite)|round|int if limite else 100 }}%"></div></div>
+  </section>
+
+  <section class="card">
+    <h2>Nova importação</h2>
+    <p class="sub">Arquivo .xlsx ou .csv com as colunas <code>cpf</code>, <code>tipochave</code> e <code>chave</code>
+      · até {{ max_linhas }} linhas · <a href="{{ url_for('modelo') }}">baixar modelo</a></p>
+    <form method="post" action="{{ url_for('importar') }}" enctype="multipart/form-data">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="file" name="arquivo" accept=".xlsx,.csv" required>
+      <button {% if saldo == 0 %}disabled title="Sem saldo neste mês"{% endif %}>Enviar para validação</button>
+    </form>
+  </section>
+</div>
+
+<section class="card">
+  <h2>Importações {% if g.usuario.admin %}(todos os usuários){% endif %}</h2>
+  {% if lotes %}
+  <div class="tabela">
+  <table>
+    <thead><tr><th>#</th><th>Data</th>{% if g.usuario.admin %}<th>Usuário</th>{% endif %}<th>Arquivo</th>
+      <th class="num">Enviadas</th><th class="num">Sucesso</th><th class="num">Erro</th><th class="num">Ignoradas</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for l in lotes %}
+      <tr>
+        <td><a href="{{ url_for('ver_lote', lote_id=l.id) }}">{{ l.id }}</a></td>
+        <td>{{ l.criado_em.strftime('%d/%m/%Y %H:%M') }}</td>
+        {% if g.usuario.admin %}<td>{{ l.usuario_nome }}</td>{% endif %}
+        <td><a href="{{ url_for('ver_lote', lote_id=l.id) }}">{{ l.arquivo }}</a></td>
+        <td class="num">{{ l.total }}</td>
+        <td class="num">{{ l.ok or 0 }}</td>
+        <td class="num">{{ l.erro or 0 }}</td>
+        <td class="num">{{ l.ignoradas }}</td>
+        {% set classe, texto = situacao_lote(l.status, l.ok, l.erro) %}
+        <td><span class="tag {{ classe }}">{{ texto }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="sub">Nenhuma importação ainda.</p>
+  {% endif %}
+</section>
+{% endblock %}

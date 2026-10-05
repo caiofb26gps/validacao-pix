@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: validacao-pix
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13.0"
+      # Postgres do ETL: postgresql://usuario:senha@host:5432/banco
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: GPS_PAY_URL
+        sync: false
+      - key: GPS_PAY_TOKEN
+        sync: false
+      - key: TEAMS_WEBHOOK
+        sync: false
+      # Só usados na primeira subida, com a tabela de usuários vazia
+      - key: ADMIN_LOGIN
+        sync: false
+      - key: ADMIN_SENHA
+        sync: false
+      - key: ADMIN_NOME
+        sync: false
+      - key: LIMITE_MENSAL_PADRAO
+        value: "500"
+      - key: MAX_LINHAS_ARQUIVO
+        value: "5000"
+      - key: WORKERS_API
+        value: "5"
+      - key: COOKIE_SEGURO
+        value: "true"

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block head %}{% if lote.status == 'processando' %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
+{% block conteudo %}
+<section class="card">
+  <div class="topo">
+    <div>
+      <h1>Lote #{{ lote.id }} — {{ lote.arquivo }}</h1>
+      <p class="sub">{{ lote.usuario_nome }} · {{ lote.criado_em.strftime('%d/%m/%Y %H:%M') }}
+        {% set classe, texto = situacao_lote(lote.status, contagem.ok, contagem.erro) %}
+        · <span class="tag {{ classe }}">{{ texto }}</span></p>
+    </div>
+    <a class="botao" href="{{ url_for('baixar_lote', lote_id=lote.id) }}">Baixar resultado (.xlsx)</a>
+  </div>
+  <div class="kpis">
+    <div><span>{{ lote.total }}</span>enviadas</div>
+    <div><span>{{ contagem.pendente + contagem.enviando }}</span>na fila</div>
+    <div class="ok"><span>{{ contagem.ok }}</span>sucesso</div>
+    <div class="erro"><span>{{ contagem.erro }}</span>erro</div>
+    <div><span>{{ lote.ignoradas }}</span>ignoradas (não cobradas)</div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="tabela">
+  <table>
+    <thead><tr><th class="num">Linha</th><th>CPF</th><th>Tipo</th><th>Chave</th><th>Status</th><th class="num">HTTP</th><th>Resposta</th></tr></thead>
+    <tbody>
+    {% for v in linhas %}
+      <tr>
+        <td class="num">{{ v.linha }}</td>
+        <td>{{ v.cpf }}</td>
+        <td>{{ v.tipo_chave }}</td>
+        <td>{{ v.chave }}</td>
+        <td><span class="tag {{ v.status }}">{{ v.status }}</span></td>
+        <td class="num">{{ v.status_code if v.status_code is not none else '' }}</td>
+        <td class="resposta">{{ v.resposta or '' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}

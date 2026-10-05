@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titulo %}Validação PIX{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  {% if g.usuario %}
+  <header>
+    <a class="marca" href="{{ url_for('inicio') }}">Validação PIX</a>
+    <nav>
+      <a href="{{ url_for('inicio') }}">Importações</a>
+      {% if g.usuario.admin %}<a href="{{ url_for('admin_usuarios') }}">Usuários</a>{% endif %}
+      <a href="{{ url_for('trocar_senha') }}">Trocar senha</a>
+      <form method="post" action="{{ url_for('logout') }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="link">Sair ({{ g.usuario.login }})</button>
+      </form>
+    </nav>
+  </header>
+  {% endif %}
+  <main>
+    {% with mensagens = get_flashed_messages(with_categories=true) %}
+      {% if mensagens %}
+      <div class="mensagens">
+        {% for categoria, msg in mensagens %}<div class="msg {{ categoria }}">{{ msg }}</div>{% endfor %}
+      </div>
+      {% endif %}
+    {% endwith %}
+    {% block conteudo %}{% endblock %}
+  </main>
+</body>
+</html>
