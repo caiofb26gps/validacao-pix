@@ -9,7 +9,7 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.13.0"
-      # Postgres do ETL: postgresql://usuario:senha@host:5432/banco
+      # Postgres do Neon (connection string do painel, com ?sslmode=require)
       - key: DATABASE_URL
         sync: false
       - key: SECRET_KEY

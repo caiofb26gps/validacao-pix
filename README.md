@@ -33,7 +33,7 @@ copy .env.example .env      # e preencha
 
 Deploy via Blueprint (`render.yaml`). Variáveis a preencher no Render:
 
-- `DATABASE_URL` — Postgres do ETL (`postgresql://usuario:senha@host:5432/banco`)
+- `DATABASE_URL` — Postgres do Neon (neon.tech, plano free): a connection string do painel, como está (`postgresql://...?sslmode=require`)
 - `GPS_PAY_URL`, `GPS_PAY_TOKEN` — API do GPS Pay
 - `ADMIN_LOGIN`, `ADMIN_SENHA`, `ADMIN_NOME` — criam o primeiro admin **só se a tabela de usuários estiver vazia**. Depois de entrar e trocar a senha, pode apagar.
 - `TEAMS_WEBHOOK` — opcional
