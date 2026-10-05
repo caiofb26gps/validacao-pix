@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from sqlalchemy import (
     Boolean, Column, DateTime, ForeignKey, Integer, MetaData, String, Table, Text,
-    create_engine,
+    create_engine, inspect, text,
 )
 
 load_dotenv()
@@ -62,12 +62,18 @@ validacao = Table(
     Column("cpf", String(20), nullable=False),
     Column("tipo_chave", String(40), nullable=False),
     Column("chave", String(255), nullable=False),
-    # pendente -> enviando -> ok | erro
+    # pendente -> enviando -> aguardando (GPS Pay validando) -> ok | invalida
+    #                      \-> erro (falha no envio, CPF fora da SRA, sem retorno)
     Column("status", String(20), nullable=False),
     Column("status_code", Integer),
     Column("resposta", Text),
     Column("criado_em", DateTime, nullable=False, index=True),
     Column("processado_em", DateTime),
+    # id devolvido pelo iniciar-validacao, usado no GET status-validacao/{id}
+    Column("id_integracao", String(100)),
+    Column("status_gps", String(40)),   # status cru do status-validacao (ex: VALIDO)
+    Column("mensagem", Text),           # explicação legível (errorMessage, SRA, prazo...)
+    Column("consultado_em", DateTime),
 )
 
 
@@ -81,3 +87,12 @@ def inicio_do_mes() -> datetime:
 
 def criar_tabelas():
     metadata.create_all(engine)
+    # create_all não altera tabela que já existe: colunas novas (todas
+    # nullable) entram aqui. Sem framework de migração — o sistema é pequeno.
+    for tabela in metadata.sorted_tables:
+        existentes = {c["name"] for c in inspect(engine).get_columns(tabela.name)}
+        with engine.begin() as conn:
+            for col in tabela.columns:
+                if col.name not in existentes:
+                    tipo = col.type.compile(engine.dialect)
+                    conn.execute(text(f"ALTER TABLE {tabela.name} ADD COLUMN {col.name} {tipo}"))

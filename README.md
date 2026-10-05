@@ -9,7 +9,8 @@ Substitui o job que lia a planilha do Google Drive.
 2. Importa um `.xlsx` ou `.csv` com as colunas `cpf`, `tipochave` e `chave` (tem um modelo para baixar na tela).
 3. O sistema confere o arquivo **antes de gastar**: linhas sem CPF/tipo/chave ou com CPF inválido (dígito verificador errado) são descartadas e **não são cobradas**.
 4. Confere o **saldo do mês** do usuário. Se o arquivo tiver mais linhas válidas do que o saldo, **nada é enviado**.
-5. Envia as linhas para a API (5 chamadas simultâneas) e mostra o andamento. O resultado pode ser baixado em `.xlsx`.
+5. Envia as linhas para `POST /chaves-pix/iniciar-validacao` (5 chamadas simultâneas). 204 = CPF não encontrado na SRA (erro).
+6. A validação no GPS Pay é assíncrona: o id devolvido é consultado em `GET /chaves-pix/status-validacao/{id}` a cada 2 min (`INTERVALO_CONSULTA_SEG`) até virar **válida** (`VALIDO`) ou **inválida** (outro status, com `errorMessage`). Sem retorno em 48h (`PRAZO_RETORNO_HORAS`) vira erro. Consultas de status não consomem saldo. O resultado pode ser baixado em `.xlsx`.
 
 ## Controle de custo
 

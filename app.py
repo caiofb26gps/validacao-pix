@@ -1,6 +1,7 @@
 import io
 import os
 import secrets
+import threading
 import time
 from collections import defaultdict
 from functools import wraps
@@ -15,7 +16,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from db import agora, criar_tabelas, engine, lote, usuario, validacao
 from importacao import ArquivoInvalido, ler_arquivo
-from processador import CotaExcedida, criar_lote, recuperar_interrompidos, uso_no_mes
+from processador import CotaExcedida, consultar_status, criar_lote, preparar_na_subida, uso_no_mes
 
 LIMITE_PADRAO = int(os.environ.get("LIMITE_MENSAL_PADRAO", "500"))
 MAX_LINHAS = int(os.environ.get("MAX_LINHAS_ARQUIVO", "5000"))
@@ -55,7 +56,7 @@ def criar_admin_inicial():
 
 criar_tabelas()
 criar_admin_inicial()
-recuperar_interrompidos()
+preparar_na_subida()
 
 
 # ---------------------------------------------------------------- segurança
@@ -94,17 +95,27 @@ def injetar_csrf():
     return {"csrf": session["csrf"]}
 
 
+ROTULOS = {
+    "pendente": "na fila", "enviando": "enviando", "aguardando": "aguardando retorno",
+    "ok": "válida", "invalida": "inválida", "erro": "erro",
+}
+app.jinja_env.globals["ROTULOS"] = ROTULOS
+
+
 @app.template_global()
-def situacao_lote(status, ok, erro):
-    """(classe css, texto) do status do lote — `concluido` sozinho ficava
-    verde mesmo com todas as linhas em erro."""
-    if status != "concluido":
-        return "processando", "processando"
-    if not erro:
+def situacao_lote(c):
+    """(classe css, texto) do lote a partir da contagem de linhas por status
+    — `concluido` sozinho ficava verde mesmo com todas as linhas em erro."""
+    if c["pendente"] or c["enviando"]:
+        return "processando", "enviando"
+    if c["aguardando"]:
+        return "processando", "aguardando retorno"
+    problemas = c["invalida"] + c["erro"]
+    if not problemas:
         return "ok", "concluído"
-    if not ok:
-        return "erro", "concluído com erro"
-    return "parcial", "concluído com erros"
+    if not c["ok"]:
+        return "erro", "concluído sem válidas"
+    return "parcial", "concluído com pendências"
 
 
 def exige_login(f):
@@ -188,11 +199,11 @@ def trocar_senha():
 # ---------------------------------------------------------------- lotes
 
 def _resumo_lotes(conn, usuario_id=None):
+    """Lotes com a contagem de linhas por status em `l.contagem`."""
     q = (
         select(
             lote, usuario.c.nome.label("usuario_nome"),
-            func.sum(case((validacao.c.status == "ok", 1), else_=0)).label("ok"),
-            func.sum(case((validacao.c.status == "erro", 1), else_=0)).label("erro"),
+            *[func.coalesce(func.sum(case((validacao.c.status == s, 1), else_=0)), 0).label(s) for s in ROTULOS],
         )
         .join(usuario, usuario.c.id == lote.c.usuario_id)
         .outerjoin(validacao, validacao.c.lote_id == lote.c.id)
@@ -202,7 +213,7 @@ def _resumo_lotes(conn, usuario_id=None):
     )
     if usuario_id is not None:
         q = q.where(lote.c.usuario_id == usuario_id)
-    return conn.execute(q).all()
+    return [{**r._mapping, "contagem": {s: r._mapping[s] for s in ROTULOS}} for r in conn.execute(q)]
 
 
 @app.get("/")
@@ -276,8 +287,17 @@ def ver_lote(lote_id):
         linhas = conn.execute(
             select(validacao).where(validacao.c.lote_id == lote_id).order_by(validacao.c.linha)
         ).all()
-    contagem = {s: sum(1 for v in linhas if v.status == s) for s in ("pendente", "enviando", "ok", "erro")}
+    contagem = {s: sum(1 for v in linhas if v.status == s) for s in ROTULOS}
     return render_template("lote.html", lote=l, linhas=linhas, contagem=contagem)
+
+
+@app.post("/lote/<int:lote_id>/consultar")
+@exige_login
+def consultar_lote(lote_id):
+    _carregar_lote(lote_id)
+    threading.Thread(target=consultar_status, args=(lote_id,), daemon=True).start()
+    flash("Consultando o retorno no GPS Pay — a página atualiza sozinha.", "ok")
+    return redirect(url_for("ver_lote", lote_id=lote_id))
 
 
 @app.get("/lote/<int:lote_id>/download")
@@ -292,9 +312,11 @@ def baixar_lote(lote_id):
     wb = Workbook()
     ws = wb.active
     ws.title = "Validacao"
-    ws.append(["linha_arquivo", "cpf", "tipochave", "chave", "status", "status_code", "resposta", "processado_em"])
+    ws.append(["linha_arquivo", "cpf", "tipochave", "chave", "situacao", "status_gps", "mensagem",
+               "http_envio", "id_integracao", "resposta_envio", "enviado_em", "consultado_em"])
     for v in linhas:
-        ws.append([v.linha, v.cpf, v.tipo_chave, v.chave, v.status, v.status_code, v.resposta, v.processado_em])
+        ws.append([v.linha, v.cpf, v.tipo_chave, v.chave, ROTULOS.get(v.status, v.status), v.status_gps,
+                   v.mensagem, v.status_code, v.id_integracao, v.resposta, v.processado_em, v.consultado_em])
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)

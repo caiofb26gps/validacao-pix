@@ -81,8 +81,12 @@ td.estourado { color: var(--erro); font-weight: 700; }
 td.resposta { font-family: ui-monospace, Consolas, monospace; font-size: 12px; max-width: 420px; word-break: break-word; }
 .tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; background: var(--neutro-bg); }
 .tag.ok, .tag.concluido { background: var(--ok-bg); color: var(--ok); }
-.tag.erro { background: var(--erro-bg); color: var(--erro); }
-.tag.processando, .tag.pendente, .tag.enviando, .tag.parcial { background: var(--aviso-bg); color: var(--aviso); }
+.tag.erro, .tag.invalida { background: var(--erro-bg); color: var(--erro); }
+.tag.processando, .tag.pendente, .tag.enviando, .tag.aguardando, .tag.parcial { background: var(--aviso-bg); color: var(--aviso); }
+.acoes { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.acoes form { margin: 0; }
+button.secundario { background: var(--neutro-bg); color: var(--texto); }
+button.secundario:hover { background: var(--borda); }
 .topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
 .kpis { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 12px; }
 .kpis div { color: var(--sub); }

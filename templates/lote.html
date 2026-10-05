@@ -1,29 +1,48 @@
 {% extends "base.html" %}
-{% block head %}{% if lote.status == 'processando' %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
+{% set enviando = contagem.pendente + contagem.enviando %}
+{% block head %}
+  {# Envio leva segundos; o retorno do GPS Pay pode levar horas — atualiza com menos frequência #}
+  {% if enviando %}<meta http-equiv="refresh" content="3">
+  {% elif contagem.aguardando %}<meta http-equiv="refresh" content="30">{% endif %}
+{% endblock %}
 {% block conteudo %}
 <section class="card">
   <div class="topo">
     <div>
       <h1>Lote #{{ lote.id }} — {{ lote.arquivo }}</h1>
+      {% set classe, texto = situacao_lote(contagem) %}
       <p class="sub">{{ lote.usuario_nome }} · {{ lote.criado_em.strftime('%d/%m/%Y %H:%M') }}
-        {% set classe, texto = situacao_lote(lote.status, contagem.ok, contagem.erro) %}
         · <span class="tag {{ classe }}">{{ texto }}</span></p>
     </div>
-    <a class="botao" href="{{ url_for('baixar_lote', lote_id=lote.id) }}">Baixar resultado (.xlsx)</a>
+    <div class="acoes">
+      {% if contagem.aguardando %}
+      <form method="post" action="{{ url_for('consultar_lote', lote_id=lote.id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="secundario">Atualizar retorno agora</button>
+      </form>
+      {% endif %}
+      <a class="botao" href="{{ url_for('baixar_lote', lote_id=lote.id) }}">Baixar resultado (.xlsx)</a>
+    </div>
   </div>
   <div class="kpis">
     <div><span>{{ lote.total }}</span>enviadas</div>
-    <div><span>{{ contagem.pendente + contagem.enviando }}</span>na fila</div>
-    <div class="ok"><span>{{ contagem.ok }}</span>sucesso</div>
+    {% if enviando %}<div><span>{{ enviando }}</span>na fila</div>{% endif %}
+    <div><span>{{ contagem.aguardando }}</span>aguardando retorno</div>
+    <div class="ok"><span>{{ contagem.ok }}</span>válidas</div>
+    <div class="erro"><span>{{ contagem.invalida }}</span>inválidas</div>
     <div class="erro"><span>{{ contagem.erro }}</span>erro</div>
     <div><span>{{ lote.ignoradas }}</span>ignoradas (não cobradas)</div>
   </div>
+  {% if contagem.aguardando %}
+  <p class="sub">O GPS Pay valida as chaves em segundo plano. O sistema consulta o retorno a cada 2 minutos;
+    sem retorno em 48h a linha vira erro.</p>
+  {% endif %}
 </section>
 
 <section class="card">
   <div class="tabela">
   <table>
-    <thead><tr><th class="num">Linha</th><th>CPF</th><th>Tipo</th><th>Chave</th><th>Status</th><th class="num">HTTP</th><th>Resposta</th></tr></thead>
+    <thead><tr><th class="num">Linha</th><th>CPF</th><th>Tipo</th><th>Chave</th><th>Situação</th><th>Detalhe</th></tr></thead>
     <tbody>
     {% for v in linhas %}
       <tr>
@@ -31,9 +50,12 @@
         <td>{{ v.cpf }}</td>
         <td>{{ v.tipo_chave }}</td>
         <td>{{ v.chave }}</td>
-        <td><span class="tag {{ v.status }}">{{ v.status }}</span></td>
-        <td class="num">{{ v.status_code if v.status_code is not none else '' }}</td>
-        <td class="resposta">{{ v.resposta or '' }}</td>
+        <td><span class="tag {{ v.status }}">{{ ROTULOS.get(v.status, v.status) }}</span></td>
+        <td class="resposta">
+          {%- if v.mensagem %}{{ v.mensagem }}
+          {%- elif v.status == 'erro' %}{% if v.status_code %}HTTP {{ v.status_code }}: {% endif %}{{ v.resposta or '' }}
+          {%- elif v.status_gps %}{{ v.status_gps }}{% endif -%}
+        </td>
       </tr>
     {% endfor %}
     </tbody>

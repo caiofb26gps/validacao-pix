@@ -1,32 +1,60 @@
-"""Reserva de cota e envio das linhas para a API de validação do GPS Pay.
+"""Reserva de cota, envio das linhas para a API do GPS Pay e consulta do
+retorno da validação.
 
-Regra de custo: cada linha gravada em pix_validacao é UMA chamada paga à API.
-A cota é reservada na hora da importação (as linhas entram como `pendente`
-dentro da mesma transação que confere o saldo), então duas importações
-simultâneas do mesmo usuário nunca furam o limite.
+Fluxo de uma linha:
+  pendente -> enviando -> (POST iniciar-validacao)
+     200 + id  -> aguardando -> (GET status-validacao/{id}, de tempos em tempos)
+                     VALIDO        -> ok
+                     outro status  -> invalida
+                     sem retorno no prazo -> erro
+     204       -> erro (CPF não encontrado na SRA)
+     outros    -> erro
+
+Regra de custo: cada linha gravada em pix_validacao é UMA chamada paga ao
+iniciar-validacao. A cota é reservada na hora da importação (as linhas entram
+como `pendente` dentro da mesma transação que confere o saldo), então duas
+importações simultâneas do mesmo usuário nunca furam o limite. As consultas de
+status não consomem cota.
 """
 
+import json
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 
 import requests
-from sqlalchemy import func, select, text, update
+from sqlalchemy import func, or_, select, text, update
 
 from db import POSTGRES, agora, engine, inicio_do_mes, lote, usuario, validacao
 
 API_URL = os.environ.get("GPS_PAY_URL", "")
 API_TOKEN = os.environ.get("GPS_PAY_TOKEN", "")
+STATUS_URL = API_URL.rsplit("/iniciar-validacao", 1)[0] + "/status-validacao/"
 TEAMS_WEBHOOK = os.environ.get("TEAMS_WEBHOOK", "")
 WORKERS = int(os.environ.get("WORKERS_API", "5"))
+INTERVALO_CONSULTA = int(os.environ.get("INTERVALO_CONSULTA_SEG", "120"))
+PRAZO_RETORNO = timedelta(hours=int(os.environ.get("PRAZO_RETORNO_HORAS", "48")))
+
+# Só VALIDO foi visto na prática; os demais nomes são palpite. Status que
+# pareça "em andamento" segue aguardando; qualquer outro conta como inválida.
+STATUS_VALIDO = {"VALIDO", "VALIDA"}
+TRECHOS_EM_ANDAMENTO = ("PEND", "PROCESS", "AGUARD", "ANDAMENTO", "INICIAD", "VALIDANDO")
+
+EM_ABERTO = ("pendente", "enviando", "aguardando")
 
 _reserva_lock = threading.Lock()
+_consulta_lock = threading.Lock()
 _lotes_em_execucao: set[int] = set()
 _execucao_lock = threading.Lock()
 
 
 class CotaExcedida(Exception):
     pass
+
+
+def _headers():
+    return {"Content-Type": "application/json", "Authorization": f"Bearer {API_TOKEN}"}
 
 
 def uso_no_mes(conn, usuario_id: int) -> int:
@@ -75,17 +103,33 @@ def criar_lote(usuario_id: int, arquivo: str, linhas: list[dict], ignoradas: int
     return lote_id
 
 
+# ---------------------------------------------------------------- envio
+
 def _chamar_api(cpf: str, tipo_chave: str, chave: str) -> tuple[int, str]:
     try:
-        r = requests.post(
-            API_URL,
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {API_TOKEN}"},
-            json={"cpf": cpf, "tipoChave": tipo_chave, "chave": chave},
-            timeout=30,
-        )
+        r = requests.post(API_URL, headers=_headers(),
+                          json={"cpf": cpf, "tipoChave": tipo_chave, "chave": chave}, timeout=30)
         return r.status_code, r.text
     except Exception as e:  # rede, timeout, DNS...
         return 0, str(e)
+
+
+def _id_da_resposta(resposta: str):
+    try:
+        return (json.loads(resposta) or {}).get("id")
+    except (ValueError, AttributeError):
+        return None
+
+
+def _resultado_envio(status_code: int, resposta: str) -> dict:
+    if status_code == 204:
+        return {"status": "erro", "mensagem": "CPF não encontrado na SRA"}
+    if status_code == 200:
+        id_ = _id_da_resposta(resposta)
+        if id_:
+            return {"status": "aguardando", "id_integracao": str(id_)[:100]}
+        return {"status": "erro", "mensagem": "GPS Pay não devolveu o id da validação"}
+    return {"status": "erro"}
 
 
 def _processar_linha(linha_id: int):
@@ -106,10 +150,10 @@ def _processar_linha(linha_id: int):
     with engine.begin() as conn:
         conn.execute(
             update(validacao).where(validacao.c.id == linha_id).values(
-                status="ok" if 200 <= status_code < 300 else "erro",
                 status_code=status_code,
                 resposta=resposta[:4000],
                 processado_em=agora(),
+                **_resultado_envio(status_code, resposta),
             )
         )
 
@@ -145,9 +189,9 @@ def _executar_lote(lote_id: int):
                 except Exception as e:
                     print(f"[lote {lote_id}] erro processando linha: {e}")
 
-        with engine.begin() as conn:
-            conn.execute(update(lote).where(lote.c.id == lote_id).values(status="concluido", concluido_em=agora()))
-        _avisar_teams(lote_id)
+        # Primeira consulta logo em seguida: validações já conhecidas pelo
+        # GPS Pay voltam na hora, sem esperar o ciclo do consultor.
+        consultar_status(lote_id)
     finally:
         parar.set()
         with _execucao_lock:
@@ -162,20 +206,125 @@ def iniciar_processamento(lote_id: int):
     threading.Thread(target=_executar_lote, args=(lote_id,), daemon=True).start()
 
 
-def recuperar_interrompidos():
-    """Na subida do app: linhas que estavam `enviando` quando o processo caiu
-    podem já ter sido cobradas — viram erro (não reenvia sozinho, por custo).
-    As `pendente` nunca foram enviadas, então o lote continua de onde parou."""
+# ---------------------------------------------------------------- retorno
+
+def _consultar_uma(linha) -> dict:
+    momento = agora()
+    valores = {"consultado_em": momento}
+    try:
+        r = requests.get(STATUS_URL + linha.id_integracao, headers=_headers(), timeout=30)
+        dados = r.json() if r.status_code == 200 and r.content else None
+    except Exception as e:
+        print(f"consulta status {linha.id_integracao} falhou: {e}")
+        dados = None
+
+    if isinstance(dados, dict) and dados.get("status"):
+        status_gps = str(dados["status"]).upper()
+        valores["status_gps"] = status_gps[:40]
+        if status_gps in STATUS_VALIDO:
+            return {**valores, "status": "ok", "mensagem": None}
+        if not any(t in status_gps for t in TRECHOS_EM_ANDAMENTO):
+            return {**valores, "status": "invalida", "mensagem": dados.get("errorMessage") or status_gps}
+
+    # 204 (ainda sem resultado), status em andamento ou falha de rede.
+    if momento - linha.processado_em > PRAZO_RETORNO:
+        horas = int(PRAZO_RETORNO.total_seconds() // 3600)
+        return {**valores, "status": "erro", "mensagem": f"Sem retorno do GPS Pay em {horas}h"}
+    return valores
+
+
+def consultar_status(lote_id: int | None = None):
+    """Consulta o status-validacao das linhas `aguardando` (todas, ou só de
+    um lote). Não roda duas vezes em paralelo."""
+    if not _consulta_lock.acquire(blocking=False):
+        return
+    try:
+        q = select(validacao.c.id, validacao.c.lote_id, validacao.c.id_integracao, validacao.c.processado_em) \
+            .where(validacao.c.status == "aguardando")
+        if lote_id is not None:
+            q = q.where(validacao.c.lote_id == lote_id)
+        with engine.connect() as conn:
+            linhas = conn.execute(q).all()
+
+        def atualizar(linha):
+            valores = _consultar_uma(linha)
+            with engine.begin() as conn:
+                conn.execute(update(validacao).where(validacao.c.id == linha.id).values(**valores))
+
+        with ThreadPoolExecutor(max_workers=WORKERS) as executor:
+            list(executor.map(atualizar, linhas))
+
+        lotes = {l.lote_id for l in linhas} | ({lote_id} if lote_id is not None else set())
+        for lid in lotes:
+            _finalizar_se_pronto(lid)
+    finally:
+        _consulta_lock.release()
+
+
+def _finalizar_se_pronto(lote_id: int):
     with engine.begin() as conn:
+        abertas = conn.execute(
+            select(func.count()).select_from(validacao)
+            .where(validacao.c.lote_id == lote_id, validacao.c.status.in_(EM_ABERTO))
+        ).scalar_one()
+        if abertas:
+            return
+        finalizou = conn.execute(
+            update(lote).where(lote.c.id == lote_id, lote.c.status == "processando")
+            .values(status="concluido", concluido_em=agora())
+        ).rowcount
+    if finalizou:
+        _avisar_teams(lote_id)
+
+
+def _loop_consulta():
+    while True:
+        threading.Event().wait(INTERVALO_CONSULTA)
+        try:
+            consultar_status()
+        except Exception as e:
+            print(f"consulta periódica falhou: {e}")
+
+
+# ---------------------------------------------------------------- subida
+
+def preparar_na_subida():
+    """Roda uma vez quando o app sobe."""
+    with engine.begin() as conn:
+        # Linhas `enviando` quando o processo caiu podem já ter sido cobradas
+        # — viram erro (não reenvia sozinho, por custo). As `pendente` nunca
+        # foram enviadas, então o lote continua de onde parou.
         conn.execute(
             update(validacao).where(validacao.c.status == "enviando").values(
                 status="erro", status_code=None, processado_em=agora(),
-                resposta="Processamento interrompido durante a chamada — a cobrança pode ter ocorrido. Confira antes de reenviar.",
+                mensagem="Processamento interrompido durante a chamada — a cobrança pode ter ocorrido. Confira antes de reenviar.",
             )
         )
+
+        # Versão anterior marcava `ok` só por o POST ter dado 2xx, sem
+        # consultar o retorno: reabre essas linhas para consulta.
+        antigas = conn.execute(
+            select(validacao.c.id, validacao.c.lote_id, validacao.c.status_code, validacao.c.resposta)
+            .where(validacao.c.status == "ok", validacao.c.status_gps.is_(None),
+                   or_(validacao.c.id_integracao.is_(None), validacao.c.status_code == 204))
+        ).all()
+        for a in antigas:
+            conn.execute(update(validacao).where(validacao.c.id == a.id)
+                         .values(**_resultado_envio(a.status_code, a.resposta or "")))
+        if antigas:
+            conn.execute(update(lote).where(lote.c.id.in_({a.lote_id for a in antigas}))
+                         .values(status="processando", concluido_em=None))
+
+        com_pendentes = conn.execute(
+            select(validacao.c.lote_id).where(validacao.c.status == "pendente").distinct()
+        ).scalars().all()
         abertos = conn.execute(select(lote.c.id).where(lote.c.status == "processando")).scalars().all()
-    for lote_id in abertos:
+
+    for lote_id in com_pendentes:
         iniciar_processamento(lote_id)
+    for lote_id in set(abertos) - set(com_pendentes):
+        _finalizar_se_pronto(lote_id)
+    threading.Thread(target=_loop_consulta, daemon=True).start()
 
 
 def _avisar_teams(lote_id: int):
@@ -186,6 +335,7 @@ def _avisar_teams(lote_id: int):
             info = conn.execute(text("""
                 SELECT l.arquivo, u.nome,
                        SUM(CASE WHEN v.status = 'ok' THEN 1 ELSE 0 END) AS ok,
+                       SUM(CASE WHEN v.status = 'invalida' THEN 1 ELSE 0 END) AS invalida,
                        SUM(CASE WHEN v.status = 'erro' THEN 1 ELSE 0 END) AS erro,
                        COUNT(v.id) AS total
                 FROM pix_lote l
@@ -197,7 +347,7 @@ def _avisar_teams(lote_id: int):
         requests.post(TEAMS_WEBHOOK, json={"text": (
             f"✅ Validação PIX — lote #{lote_id} finalizado\n\n"
             f"Arquivo: {info.arquivo}\n\nUsuário: {info.nome}\n\n"
-            f"Total: {info.total} | Sucesso: {info.ok} | Erro: {info.erro}"
+            f"Total: {info.total} | Válidas: {info.ok} | Inválidas: {info.invalida} | Erro: {info.erro}"
         )}, timeout=30)
     except Exception as e:
         print(f"Erro Teams: {e}")
