@@ -128,8 +128,9 @@ def exige_admin(f):
 
 @app.get("/healthz")
 def healthz():
-    with engine.connect() as conn:
-        conn.execute(select(1))
+    # Não toca no banco de propósito: o health check do Render e o ping
+    # externo que mantém o serviço acordado batem aqui o tempo todo — com uma
+    # query, o Neon (free) nunca suspenderia e queimaria as horas de compute.
     return {"ok": True}
 
 
