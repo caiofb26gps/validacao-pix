@@ -49,7 +49,10 @@ h2 { font-size: 15px; margin: 0 0 8px; }
 .grade { display: grid; grid-template-columns: 260px 1fr; gap: 16px; }
 .grade .card { margin-bottom: 0; }
 .grade + .card { margin-top: 16px; }
+.grade.dupla { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); margin-bottom: 16px; }
 @media (max-width: 720px) { .grade { grid-template-columns: 1fr; } }
+.rodape { margin: 16px 0 0; text-align: center; }
+select { font: inherit; padding: 8px 10px; border: 1px solid var(--borda); border-radius: 6px; background: var(--card); color: var(--texto); display: block; margin-top: 4px; }
 .numero { font-size: 36px; font-weight: 700; margin: 0; }
 .barra { height: 6px; background: var(--neutro-bg); border-radius: 3px; overflow: hidden; }
 .barra div { height: 100%; background: var(--primaria); }
@@ -57,6 +60,7 @@ form label { display: block; margin-bottom: 12px; font-weight: 500; }
 form label input:not([type=checkbox]) { display: block; width: 100%; margin-top: 4px; }
 form.linha { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
 form.linha label { margin: 0; }
+form.linha + .sub { margin-top: 12px; }
 label.check { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; margin: 12px 0; }
 input, button { font: inherit; }
 input:not([type=checkbox]):not([type=file]) { padding: 8px 10px; border: 1px solid var(--borda); border-radius: 6px; background: var(--card); color: var(--texto); }

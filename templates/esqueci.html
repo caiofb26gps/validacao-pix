@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block titulo %}Esqueci a senha — Validação PIX{% endblock %}
+{% block conteudo %}
+<div class="card login">
+  <h1>Esqueci a senha</h1>
+  <p class="sub">Informe seu e-mail de login. Enviaremos um link para criar uma nova senha.</p>
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>E-mail <input name="login" type="email" autocomplete="username" required autofocus></label>
+    <button>Enviar link</button>
+  </form>
+  <p class="sub rodape"><a href="{{ url_for('login') }}">Voltar para o login</a></p>
+</div>
+{% endblock %}

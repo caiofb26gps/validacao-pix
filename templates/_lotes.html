@@ -1,0 +1,30 @@
+{% macro tabela_lotes(lotes, mostrar_usuario) %}
+{% if lotes %}
+<div class="tabela">
+<table>
+  <thead><tr><th>#</th><th>Data</th>{% if mostrar_usuario %}<th>Usuário</th>{% endif %}<th>Arquivo</th>
+    <th class="num">Enviadas</th><th class="num">Válidas</th><th class="num">Inválidas</th><th class="num">Erro</th><th class="num">Aguardando</th><th class="num">Ignoradas</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for l in lotes %}
+    <tr>
+      <td><a href="{{ url_for('ver_lote', lote_id=l.id) }}">{{ l.id }}</a></td>
+      <td>{{ l.criado_em.strftime('%d/%m/%Y %H:%M') }}</td>
+      {% if mostrar_usuario %}<td>{{ l.usuario_nome }}</td>{% endif %}
+      <td><a href="{{ url_for('ver_lote', lote_id=l.id) }}">{{ l.arquivo }}</a></td>
+      <td class="num">{{ l.total }}</td>
+      <td class="num">{{ l.contagem.ok }}</td>
+      <td class="num">{{ l.contagem.invalida }}</td>
+      <td class="num">{{ l.contagem.erro }}</td>
+      <td class="num">{{ l.contagem.pendente + l.contagem.enviando + l.contagem.aguardando }}</td>
+      <td class="num">{{ l.ignoradas }}</td>
+      {% set classe, texto = situacao_lote(l.contagem) %}
+      <td><span class="tag {{ classe }}">{{ texto }}</span></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="sub">Nenhuma importação.</p>
+{% endif %}
+{% endmacro %}

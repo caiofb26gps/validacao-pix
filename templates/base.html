@@ -13,6 +13,7 @@
     <a class="marca" href="{{ url_for('inicio') }}">Validação PIX</a>
     <nav>
       <a href="{{ url_for('inicio') }}">Importações</a>
+      <a href="{{ url_for('relatorio') }}">Relatório</a>
       {% if g.usuario.admin %}<a href="{{ url_for('admin_usuarios') }}">Usuários</a>{% endif %}
       <a href="{{ url_for('trocar_senha') }}">Trocar senha</a>
       <form method="post" action="{{ url_for('logout') }}">

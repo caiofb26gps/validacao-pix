@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block titulo %}Nova senha — Validação PIX{% endblock %}
+{% block conteudo %}
+<div class="card login">
+  <h1>Criar nova senha</h1>
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Nova senha <input name="nova" type="password" autocomplete="new-password" minlength="8" required autofocus></label>
+    <label>Confirmar nova senha <input name="confirmacao" type="password" autocomplete="new-password" minlength="8" required></label>
+    <button>Salvar</button>
+  </form>
+</div>
+{% endblock %}

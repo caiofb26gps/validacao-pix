@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% from "_lotes.html" import tabela_lotes %}
+{% block titulo %}Relatório — Validação PIX{% endblock %}
+{% block conteudo %}
+<section class="card">
+  <h1>Relatório</h1>
+  <form method="get" class="linha">
+    <label>De <input type="date" name="de" value="{{ de.isoformat() }}"></label>
+    <label>Até <input type="date" name="ate" value="{{ ate.isoformat() }}"></label>
+    {% if g.usuario.admin %}
+    <label>Usuário
+      <select name="usuario">
+        <option value="">Todos</option>
+        {% for u in usuarios %}<option value="{{ u.id }}" {% if u.id == usuario_id %}selected{% endif %}>{{ u.nome }}</option>{% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <button>Filtrar</button>
+  </form>
+  <p class="sub">Atalhos:
+    {% for rotulo, a_de, a_ate in atalhos %}
+      <a href="{{ url_for('relatorio', de=a_de.isoformat(), ate=a_ate.isoformat(), usuario=usuario_id if g.usuario.admin and usuario_id else None) }}">{{ rotulo }}</a>{% if not loop.last %} ·{% endif %}
+    {% endfor %}
+  </p>
+
+  <div class="kpis">
+    <div><span>{{ total[0] }}</span>chaves enviadas (cobradas)</div>
+    <div class="ok"><span>{{ total.ok }}</span>válidas</div>
+    <div class="erro"><span>{{ total.invalida }}</span>inválidas</div>
+    <div class="erro"><span>{{ total.erro }}</span>erro</div>
+    <div><span>{{ total.pendente + total.enviando + total.aguardando }}</span>aguardando retorno</div>
+  </div>
+</section>
+
+{% macro tabela_totais(linhas, rotulo, campo) %}
+<div class="tabela">
+<table>
+  <thead><tr><th>{{ rotulo }}</th><th class="num">Enviadas</th><th class="num">Válidas</th><th class="num">Inválidas</th><th class="num">Erro</th><th class="num">Aguardando</th></tr></thead>
+  <tbody>
+  {% for r in linhas %}
+    <tr>
+      <td>{{ r[campo] or '—' }}</td>
+      <td class="num">{{ r.total }}</td>
+      <td class="num">{{ r.ok }}</td>
+      <td class="num">{{ r.invalida }}</td>
+      <td class="num">{{ r.erro }}</td>
+      <td class="num">{{ r.pendente + r.enviando + r.aguardando }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endmacro %}
+
+{% if total[0] %}
+<div class="grade dupla">
+  {% if g.usuario.admin and not usuario_id %}
+  <section class="card">
+    <h2>Por usuário</h2>
+    {{ tabela_totais(por_usuario, "Usuário", "nome") }}
+  </section>
+  {% endif %}
+  <section class="card">
+    <h2>Por tipo de chave</h2>
+    {{ tabela_totais(por_tipo, "Tipo", "tipo") }}
+  </section>
+</div>
+{% endif %}
+
+<section class="card">
+  <h2>Importações no período</h2>
+  {{ tabela_lotes(lotes, g.usuario.admin) }}
+</section>
+{% endblock %}

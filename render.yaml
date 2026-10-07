@@ -20,6 +20,16 @@ services:
         sync: false
       - key: TEAMS_WEBHOOK
         sync: false
+      # "Esqueci a senha": envio via Microsoft Graph — mesmo app do Azure do
+      # Disparos (PBI_TENANT_ID / PBI_CLIENT_ID / PBI_CLIENT_SECRET / MAIL_SENDER_UPN)
+      - key: MS_TENANT_ID
+        sync: false
+      - key: MS_CLIENT_ID
+        sync: false
+      - key: MS_CLIENT_SECRET
+        sync: false
+      - key: MAIL_SENDER_UPN
+        sync: false
       # Só usados na primeira subida, com a tabela de usuários vazia
       - key: ADMIN_LOGIN
         sync: false

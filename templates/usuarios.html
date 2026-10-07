@@ -5,7 +5,7 @@
   <form method="post" class="linha">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <label>Nome <input name="nome" required></label>
-    <label>Login <input name="login" required></label>
+    <label>E-mail (login) <input name="login" type="email" required></label>
     <label>Senha inicial <input name="senha" type="password" minlength="8" autocomplete="new-password" required></label>
     <label>Limite/mês <input name="limite_mensal" type="number" min="0" value="{{ limite_padrao }}" required></label>
     <label class="check"><input type="checkbox" name="admin"> Admin</label>

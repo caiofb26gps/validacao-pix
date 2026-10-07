@@ -77,6 +77,18 @@ validacao = Table(
 )
 
 
+redefinicao_senha = Table(
+    "pix_redefinicao_senha", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("usuario_id", Integer, ForeignKey("pix_usuario.id"), nullable=False),
+    # sha256 do token — o token em si só existe no link do e-mail
+    Column("token_hash", String(64), nullable=False, unique=True),
+    Column("expira_em", DateTime, nullable=False),
+    Column("usado_em", DateTime),
+    Column("criado_em", DateTime, nullable=False),
+)
+
+
 def agora() -> datetime:
     return datetime.now(FUSO).replace(tzinfo=None)
 
